@@ -8,7 +8,7 @@ RUN useradd -m -s /bin/bash sandboxuser
 WORKDIR /workspace
 
 # 4. Install basic data science packages
-RUN pip install --no-cache-dir numpy pandas matplotlib sympy
+RUN pip install --no-cache-dir numpy pandas matplotlib sympy seaborn scikit-learn
 
 # 5. Switch to the non-root user
 USER sandboxuser

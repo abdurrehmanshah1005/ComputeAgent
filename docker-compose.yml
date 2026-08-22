@@ -1,0 +1,38 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    container_name: computeagent-db
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: computeagent
+    ports:
+      - "5432:5432"
+    volumes:
+      # This saves your database data permanently so it survives container restarts
+      - pgdata:/var/lib/postgresql/data
+
+  web:
+    build: ./backend
+    container_name: computeagent-web
+    ports:
+      - "8000:8000"
+    environment:
+      # Tell FastAPI to connect to the "db" container instead of localhost
+      DATABASE_URL: "postgresql+psycopg://admin:secret@db:5432/computeagent"
+    env_file:
+      - ./backend/.env # Loads your Gemini API key automatically
+    volumes:
+      # THE MAGIC LINE: Gives FastAPI access to Docker Desktop to spawn sandboxes
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Links the workspaces folder so artifacts save directly to your Windows drive
+      - ./backend/workspaces:/app/workspaces
+    depends_on:
+      - db
+    restart: on-failure
+
+volumes:
+  pgdata:
