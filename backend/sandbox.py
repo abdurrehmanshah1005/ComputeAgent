@@ -10,19 +10,23 @@ class SandboxManager:
     def execute_code(self, code_string: str, workspace_dir: str = None):
         try:
             volumes = {}
-            # If a directory is provided, mount it to the container
+            working_dir = "/"
+            
             if workspace_dir:
-                abs_path = os.path.abspath(workspace_dir)
-                # This tells Docker: "Link the Windows folder (abs_path) to /workspace inside the container"
-                volumes[abs_path] = {'bind': '/workspace', 'mode': 'rw'}
+                # Extract the UUID (e.g., "workspaces/123-uuid" -> "123-uuid")
+                execution_id = workspace_dir.split("/")[-1]
+                
+                # Use the Docker named volume instead of a local host path
+                volumes['shared_workspaces'] = {'bind': '/sandbox_data', 'mode': 'rw'}
+                working_dir = f"/sandbox_data/{execution_id}"
 
             logs = self.client.containers.run(
                 image=self.image_name,
                 command=["python3", "-c", code_string],
                 remove=True,
                 network_disabled=True,
-                volumes=volumes,           # Attach the folder
-                working_dir="/workspace"   # Run the code inside that folder
+                volumes=volumes,
+                working_dir=working_dir
             )
             
             return {
@@ -34,4 +38,10 @@ class SandboxManager:
             return {
                 "status": "error",
                 "output": e.stderr.decode("utf-8").strip()
+            }
+        except Exception as e:
+            # Catch APIErrors (like invalid mounts) so they are safely returned
+            return {
+                "status": "error",
+                "output": f"Sandbox infrastructure error: {str(e)}"
             }

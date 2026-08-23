@@ -5,16 +5,30 @@ from google.genai import types
 
 class CodeAgent:
     def __init__(self):
-        # The client automatically picks up GEMINI_API_KEY from the environment
         self.client = genai.Client()
-        # We use flash because it is fast, highly capable at coding, and free-tier friendly
-        self.model_name = "gemini-flash-latest" 
+        self.model_name = "gemini-flash-latest"
+        
+        # Check if we are in development mode to save API quota
+        self.use_mock = os.getenv("USE_MOCK_AGENT", "false").lower() == "true"
 
     def generate_python_code(self, user_prompt: str) -> str:
         """
-        Calls the Gemini API once to generate Python code based on the prompt.
+        Generates Python code via Gemini, or returns mock code if testing.
         """
-        # We explicitly tell the AI to act like a machine, not a chatbot
+        if self.use_mock:
+            print("⚠️ USING MOCK AGENT: Bypassing Google API to save quota.")
+            # Left-aligned, no indentation required, foolproof mock code
+            return """import pandas as pd
+import matplotlib.pyplot as plt
+
+df = pd.read_csv('sales.csv')
+plt.figure(figsize=(8, 5))
+plt.bar(df.iloc[:, 0].astype(str), df.iloc[:, 1], color='green')
+plt.title('Mock Revenue Chart')
+plt.savefig('plot.png')
+print("Mock analysis complete!")"""
+
+        # If not mocking, call the real Google API
         system_instruction = (
             "You are an expert Python data science assistant. "
             "Write Python code to solve the user's problem. "
@@ -29,9 +43,8 @@ class CodeAgent:
             contents=user_prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
-                temperature=0.1, # Low temperature makes the code more deterministic/reliable
+                temperature=0.1,
             )
         )
         
-        # Return the raw text, stripping any accidental whitespace
         return response.text.strip()

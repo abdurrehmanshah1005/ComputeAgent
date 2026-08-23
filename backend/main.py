@@ -19,6 +19,7 @@ from sqlalchemy import desc
 # Import our database dependencies
 from database import get_db, engine
 import models
+from worker import run_analysis_job
 
 # Load the .env file so the API key is available
 load_dotenv()
@@ -87,72 +88,38 @@ def ask_agent(request: AgentRequest):
 def analyze_file(
     prompt: str = Form(...), 
     file: UploadFile = File(...),
-    db: Session = Depends(get_db)  # <-- INJECT THE DATABASE SESSION
+    db: Session = Depends(get_db)
 ):
     execution_id = str(uuid.uuid4())
     workspace_dir = f"workspaces/{execution_id}"
     os.makedirs(workspace_dir, exist_ok=True)
+    # SECURITY/PERMISSION FIX: Grant the restricted sandbox user write access
+    os.chmod(workspace_dir, 0o777)
 
     safe_filename = secure_filename(file.filename)
     file_path = os.path.join(workspace_dir, safe_filename)
-    
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    augmented_prompt = (
-        f"{prompt}\n\n"
-        f"Note: You have access to a file named '{safe_filename}' in your current directory. "
-        "Use pandas to read it, print the desired text output, and if requested, "
-        "save any visualizations as 'plot.png' or reports as 'analysis.xlsx'."
-    )
-
-    try:
-        generated_code = agent.generate_python_code(augmented_prompt)
-    except Exception as e:
-        return {"status": "api_error", "message": str(e)}
-
-    execution_result = sandbox.execute_code(generated_code, workspace_dir=workspace_dir)
-
-    # ---------------------------------------------------------
-    # DATABASE STEP 1: Save the Execution record
-    # ---------------------------------------------------------
+    # 1. Create a "pending" database record instantly
     db_execution = models.Execution(
         id=execution_id,
-        prompt=augmented_prompt,
-        generated_code=generated_code,
-        status=execution_result["status"],
-        output_logs=execution_result["output"]
+        prompt=prompt,
+        generated_code="Pending generation...",
+        status="queued",  # Note the new status
+        output_logs=""
     )
     db.add(db_execution)
-    # We must commit now so the Execution exists in the DB before we link Artifacts to it
-    db.commit() 
-
-    artifacts = []
-    if os.path.exists(workspace_dir):
-        for filename in os.listdir(workspace_dir):
-            if filename != safe_filename:
-                # ---------------------------------------------------------
-                # DATABASE STEP 2: Save the Artifact records
-                # ---------------------------------------------------------
-                db_artifact = models.Artifact(
-                    execution_id=execution_id,
-                    filename=filename
-                )
-                db.add(db_artifact)
-                
-                artifacts.append({
-                    "filename": filename,
-                    "download_url": f"/api/artifacts/{execution_id}/{filename}"
-                })
-    
-    # Commit all the new artifact records to the database
     db.commit()
 
+    # 2. Hand the heavy lifting to the background worker via Redis
+    run_analysis_job.delay(execution_id, prompt, safe_filename)
+
+    # 3. Return immediately to the user (takes ~50 milliseconds)
     return {
         "execution_id": execution_id,
-        "generated_code": generated_code,
-        "execution": execution_result,
-        "artifacts": artifacts
+        "status": "queued",
+        "message": "Job submitted successfully. Poll /api/executions to see the result."
     }
 
 @app.get("/api/artifacts/{execution_id}/{filename}")
@@ -209,6 +176,7 @@ def get_executions(db: Session = Depends(get_db)):
             "execution_id": exec_record.id,
             "prompt": exec_record.prompt,
             "status": exec_record.status,
+            "output_logs": exec_record.output_logs,
             "created_at": exec_record.created_at.isoformat() if exec_record.created_at else None,
             "artifacts": artifacts_list
         })
