@@ -6,17 +6,17 @@ from sandbox import SandboxManager
 from database import SessionLocal
 import models
 
-# 1. Connect to Redis (the message broker)
+# Connect to Redis (the message broker)
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 celery_app = Celery("tasks", broker=REDIS_URL)
-
-# 2. Initialize the heavy components once per worker
-agent = CodeAgent()
-sandbox = SandboxManager()
 
 # 3. Define the background task
 @celery_app.task
 def run_analysis_job(execution_id: str, prompt: str, safe_filename: str):
+    # FIX: Instantiate these INSIDE the task so they don't run on import!
+    agent = CodeAgent()
+    sandbox = SandboxManager()
+    
     workspace_dir = f"workspaces/{execution_id}"
     
     augmented_prompt = (
