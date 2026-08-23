@@ -1,14 +1,18 @@
+
 # ComputeAgent
 
-ComputeAgent is a production-grade AI computational and coding agent platform. 
+An asynchronous, AI-powered data analysis platform built with a containerized microservices architecture.
 
-The central principle is: **The LLM reasons about the problem; the sandbox performs the computation.**
+## Architecture
+- **Frontend:** React, TypeScript, Vite
+- **Backend API:** FastAPI (Python)
+- **Message Broker:** Redis
+- **Background Task Worker:** Celery
+- **Database:** PostgreSQL
+- **Execution Environment:** Isolated Docker Sandbox with POSIX-secured Named Volumes
 
-## Current Capabilities
-* **FastAPI Backend:** Orchestrates the execution environment.
-* **Isolated Docker Sandbox:** Executes untrusted Python code securely without network access or root privileges.
-
-## Upcoming Features
-* Google Gen AI SDK integration for agent reasoning.
-* Artifact management and secure object storage.
-* Asynchronous job queues (Redis/Celery).
+## How to Run
+1. Ensure Docker Desktop is running.
+2. Build and start the infrastructure:
+   ```bash
+   docker-compose up -d --build
