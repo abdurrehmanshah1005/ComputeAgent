@@ -53,4 +53,119 @@ docker-compose down
 
 ## ⚙️ CI/CD Pipeline
 
-The repository includes a fully configured **GitHub Actions** workflow. Upon pushing to the `main` branch, the pipeline automatically builds and publishes the production-ready Docker images (Frontend, Backend, and Worker) to the GitHub Container Registry (GHCR), ensuring the platform is immediately ready for cloud VM deployment.
+The repository includes a fully configured **GitHub Actions** workflow (`.github/workflows/docker-publish.yml`). Upon pushing changes to the `main` branch, the workflow automatically:
+
+1. Tests and validates the codebases.
+2. Compiles production assets.
+3. Builds and pushes versioned Docker images to the **GitHub Container Registry (GHCR)**:
+* `ghcr.io/yourusername/computeagent-frontend:latest`
+* `ghcr.io/yourusername/computeagent-backend:latest`
+
+
+
+---
+
+## 🌐 Production Cloud Deployment (Using GHCR Images)
+
+Because the background worker requires access to the host Docker daemon (`/var/run/docker.sock`) to spawn ephemeral sandboxes, deploy the platform to a Linux Virtual Machine (e.g., AWS EC2, GCP Compute Engine, Oracle Cloud, or DigitalOcean Droplet).
+
+Using pre-built images from GHCR eliminates the need to compile code or install Node/Python on the production server.
+
+### 1. Prepare the Production Compose File
+
+Create a `docker-compose.prod.yml` file on your cloud server:
+
+```yaml
+services:
+  frontend:
+    image: ghcr.io/yourusername/computeagent-frontend:latest
+    container_name: computeagent-frontend
+    ports:
+      - "80:80"
+    restart: always
+    depends_on:
+      - web
+
+  web:
+    image: ghcr.io/yourusername/computeagent-backend:latest
+    container_name: computeagent-web
+    command: sh -c "uv run uvicorn main:app --host 0.0.0.0 --port 8000"
+    volumes:
+      - shared_workspaces:/app/workspaces
+    environment:
+      - DATABASE_URL=postgresql://user:password@db:5432/compute_db
+      - REDIS_URL=redis://redis:6379/0
+    restart: always
+    depends_on:
+      - db
+      - redis
+
+  worker:
+    image: ghcr.io/yourusername/computeagent-backend:latest
+    container_name: computeagent-worker
+    command: sh -c "uv run celery -A worker.celery_app worker --loglevel=info"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - shared_workspaces:/app/workspaces
+    environment:
+      - DATABASE_URL=postgresql://user:password@db:5432/compute_db
+      - REDIS_URL=redis://redis:6379/0
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    restart: always
+    depends_on:
+      - db
+      - redis
+
+  db:
+    image: postgres:15-alpine
+    container_name: computeagent-db
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=compute_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    container_name: computeagent-redis
+    restart: always
+
+volumes:
+  postgres_data:
+  shared_workspaces:
+
+```
+
+### 2. Deploy to Server
+
+1. **SSH into the cloud VM** and install Docker:
+```bash
+curl -fsSL [https://get.docker.com](https://get.docker.com) -o get-docker.sh
+sudo sh get-docker.sh
+
+```
+
+
+2. **Authenticate with GHCR** using a GitHub Personal Access Token (PAT with `read:packages` scope):
+```bash
+echo "YOUR_GITHUB_PAT" | sudo docker login ghcr.io -u yourusername --password-stdin
+
+```
+
+
+3. **Pull images and start the services**:
+```bash
+sudo docker compose -f docker-compose.prod.yml pull
+sudo docker compose -f docker-compose.prod.yml up -d
+
+```
+
+
+4. **Verify Deployment**:
+Open `http://<YOUR_SERVER_PUBLIC_IP>` in your browser to access the dashboard.
+
+```
+
+```
