@@ -35,6 +35,15 @@ services:
       - db
       - redis
 
+
+  frontend:
+    build: ./frontend
+    container_name: computeagent-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - web
+
   worker:
     build: ./backend
     container_name: computeagent-worker
