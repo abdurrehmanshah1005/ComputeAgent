@@ -48,9 +48,12 @@ def analyze_file(
     execution_id = str(uuid.uuid4())
     workspace_dir = f"workspaces/{execution_id}"
     os.makedirs(workspace_dir, exist_ok=True)
-    
-    # SECURITY/PERMISSION FIX: Grant the restricted sandbox user write access
-    os.chmod(workspace_dir, 0o777)
+
+    # PRODUCTION SECURITY FIX: 
+    # Transfer ownership to the sandbox's unprivileged user (UID 1000)
+    # and restrict permissions so only the owner can write (755).
+    os.chown(workspace_dir, 1000, 1000)
+    os.chmod(workspace_dir, 0o755)
 
     safe_filename = secure_filename(file.filename)
     file_path = os.path.join(workspace_dir, safe_filename)
